@@ -1,0 +1,14 @@
+[package]
+name = "tusk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rand = "0.8.5"
+uhid-virt = "0.0.8"
+
+[dependencies.opensk]
+git = "https://github.com/google/OpenSK.git"
+rev = "ec4c03d99ac7e915ff746a28fb68e8a1ffac417c"
+default-features = false
+features = ["software_crypto"]
