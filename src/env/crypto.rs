@@ -6,8 +6,7 @@ use opensk::api::crypto::ec_signing::{EcPublicKey, EcSecretKey, EcSignature, Ecd
 use opensk::api::crypto::rust_crypto::{SoftwareAes256, SoftwareEcdh, SoftwareHkdf256, SoftwareHmac256, SoftwareSha256};
 use opensk::api::rng::Rng;
 
-use tss_esapi::structures::{EccSignature, Private, Public, Signature};
-use tss_esapi::traits::{Marshall, UnMarshall};
+use tss_esapi::structures::{CreateKeyResult, EccParameter, EccPoint, EccSignature, Private, Public, Signature};
 
 use crate::tpm::get_tpm;
 
@@ -31,7 +30,7 @@ impl Ecdsa for TpmEcdsa {
 }
 
 pub struct TpmEcdsaSecretKey {
-    public: Public,
+    public: EccPoint,
     private: Private
 }
 
@@ -42,10 +41,14 @@ impl EcSecretKey for TpmEcdsaSecretKey {
     fn random(_rng: &mut impl Rng) -> Self {
         let mut tpm = get_tpm().write().expect("Failed to lock TPM");
         let key = tpm.create_ecdsa_key().expect("Failed to create ECDSA key using TPM");
+        let (public, private) = match key {
+            CreateKeyResult { out_public: Public::Ecc { unique, .. }, out_private, .. } => (unique, out_private),
+            _ => panic!("Unexpected key type"),
+        };
 
         Self {
-            public: key.out_public,
-            private: key.out_private,
+            public,
+            private,
         }
     }
 
@@ -66,10 +69,12 @@ impl EcSecretKey for TpmEcdsaSecretKey {
     }
 
     fn export(&self) -> Vec<u8> {
-        let public = self.public.marshall().expect("Failed to marshall public key");
-        let mut bytes = Vec::with_capacity(1 + public.len() + self.private.len());
-        bytes.push(public.len() as u8);
-        bytes.extend_from_slice(&public);
+        let mut x = [0u8; EC_FIELD_SIZE];
+        let mut y = [0u8; EC_FIELD_SIZE];
+        self.public_key().to_coordinates(&mut x, &mut y);
+        let mut bytes = Vec::with_capacity(2 * EC_FIELD_SIZE + self.private.len());
+        bytes.extend_from_slice(&x);
+        bytes.extend_from_slice(&y);
         bytes.extend_from_slice(&self.private);
         bytes
     }
@@ -78,27 +83,27 @@ impl EcSecretKey for TpmEcdsaSecretKey {
         if bytes.is_empty() {
             return None;
         }
-        let public_len = bytes[0] as usize;
-        if bytes.len() < 1 + public_len {
+        if bytes.len() <= 2 * EC_FIELD_SIZE {
             return None;
         }
 
-        let public = Public::unmarshall(&bytes[1..1 + public_len]).ok()?;
-        let private = Private::try_from(&bytes[1 + public_len..]).ok()?;
+        let x = EccParameter::try_from(&bytes[..EC_FIELD_SIZE]).ok()?;
+        let y = EccParameter::try_from(&bytes[EC_FIELD_SIZE..2 * EC_FIELD_SIZE]).ok()?;
+        let public = EccPoint::new(x, y);
+        let private = Private::try_from(&bytes[2 * EC_FIELD_SIZE..]).ok()?;
+
         Some(Self { public, private })
     }
 }
 
-pub struct TpmEcdsaPublicKey(Public);
+pub struct TpmEcdsaPublicKey(EccPoint);
 
 impl EcPublicKey for TpmEcdsaPublicKey {
     type Signature = TpmEcdsaSignature;
 
     fn to_coordinates(&self, x: &mut [u8; EC_FIELD_SIZE], y: &mut [u8; EC_FIELD_SIZE]) {
-        if let Public::Ecc { unique, .. } = &self.0 {
-            x.copy_from_slice(unique.x());
-            y.copy_from_slice(unique.y());
-        }
+        x.copy_from_slice(self.0.x());
+        y.copy_from_slice(self.0.y());
     }
 }
 
