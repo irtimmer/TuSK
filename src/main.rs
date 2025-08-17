@@ -10,6 +10,7 @@ use crate::hid::FidoHid;
 
 mod hid;
 mod env;
+mod tpm;
 
 fn main() {
     if let Err(e) = run_fido_hid() {

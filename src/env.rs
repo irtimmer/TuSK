@@ -1,9 +1,9 @@
 use std::fs::File;
 
-use opensk::api::crypto::rust_crypto::SoftwareCrypto;
 use opensk::api::key_store;
 use opensk::env::Env;
 
+pub use crypto::TuskCrypto;
 pub use rng::TuskRng;
 pub use customization::TuskCustomization;
 pub use persist::TuskPersist;
@@ -13,6 +13,7 @@ use crate::hid::FidoHid;
 
 mod clock;
 mod customization;
+mod crypto;
 mod persist;
 mod rng;
 mod user_presence;
@@ -34,7 +35,7 @@ impl Env for TuskEnv {
     type Write = TuskWrite;
     type Customization = TuskCustomization;
     type HidConnection = FidoHid<File>;
-    type Crypto = SoftwareCrypto;
+    type Crypto = TuskCrypto;
 
     fn rng(&mut self) -> &mut Self::Rng {
         &mut self.rng

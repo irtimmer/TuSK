@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ecdsa = { version = "0.16.9", default-features = false, features = [ "der" ] }
+p256 = "0.13.2"
 rand = "0.8.5"
+tss-esapi = "7.6.0"
 uhid-virt = "0.0.8"
 
 [dependencies.opensk]
