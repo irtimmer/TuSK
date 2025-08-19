@@ -1,3 +1,5 @@
+extern crate alloc;
+
 use std::fs::File;
 
 use opensk::{Ctap, Transport};

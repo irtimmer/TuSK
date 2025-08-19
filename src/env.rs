@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use opensk::api::key_store;
 use opensk::env::Env;
 
 pub use crypto::TuskCrypto;
@@ -14,6 +13,7 @@ use crate::hid::FidoHid;
 mod clock;
 mod customization;
 mod crypto;
+mod key_store;
 mod persist;
 mod rng;
 mod user_presence;
@@ -77,8 +77,6 @@ impl Env for TuskEnv {
         None
     }
 }
-
-impl key_store::Helper for TuskEnv {}
 
 impl TuskEnv {
     pub fn new(hid: FidoHid<File>) -> Self {

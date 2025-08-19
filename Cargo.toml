@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arrayref = "0.3.9"
 ecdsa = { version = "0.16.9", default-features = false, features = [ "der" ] }
 p256 = "0.13.2"
 rand = "0.8.5"
@@ -15,3 +16,7 @@ git = "https://github.com/google/OpenSK.git"
 rev = "ec4c03d99ac7e915ff746a28fb68e8a1ffac417c"
 default-features = false
 features = ["software_crypto"]
+
+[dependencies.sk-cbor]
+git = "https://github.com/google/OpenSK.git"
+rev = "ec4c03d99ac7e915ff746a28fb68e8a1ffac417c"
