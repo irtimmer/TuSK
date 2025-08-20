@@ -40,7 +40,7 @@ impl Drop for Tpm {
 }
 
 impl Tpm {
-    pub fn create_primary_key(&mut self) -> Result<KeyHandle, Error> {
+    pub fn create_primary_storage_key(&mut self) -> Result<KeyHandle, Error> {
         let public = PublicBuilder::new()
             .with_public_algorithm(PublicAlgorithm::Ecc)
             .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
@@ -63,6 +63,35 @@ impl Tpm {
             .with_ecc_unique_identifier(EccPoint::default())
             .build()?;
 
+        self.create_primary_key(public)
+    }
+
+    pub fn create_primary_master_key(&mut self) -> Result<KeyHandle, Error> {
+        let public = PublicBuilder::new()
+            .with_public_algorithm(PublicAlgorithm::Ecc)
+            .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
+            .with_object_attributes(ObjectAttributes::builder()
+                .with_fixed_tpm(true)
+                .with_fixed_parent(true)
+                .with_sensitive_data_origin(true)
+                .with_user_with_auth(true)
+                .with_restricted(false)
+                .with_decrypt(true)
+                .build()?)
+            .with_ecc_parameters(PublicEccParameters::builder()
+                .with_key_derivation_function_scheme(KeyDerivationFunctionScheme::Null)
+                .with_curve(EccCurve::NistP256)
+                .with_ecc_scheme(EccScheme::EcDh(HashScheme::new(HashingAlgorithm::Sha256)))
+                .with_restricted(false)
+                .with_is_decryption_key(true)
+                .build()?)
+            .with_ecc_unique_identifier(EccPoint::default())
+            .build()?;
+
+        self.create_primary_key(public)
+    }
+
+    fn create_primary_key(&mut self, public: Public) -> Result<KeyHandle, Error> {
         self.ctx.execute_with_nullauth_session(|ctx| {
             let key = ctx.create_primary(
                 Hierarchy::Owner,
@@ -78,7 +107,7 @@ impl Tpm {
     }
 
     pub fn create_ecdsa_key(&mut self) -> Result<CreateKeyResult, Error> {
-        let primary_handle = self.create_primary_key()?;
+        let primary_handle = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(EccPoint::default())?;
 
         self.ctx.execute_with_nullauth_session(|ctx| {
@@ -97,7 +126,7 @@ impl Tpm {
     }
 
     pub fn sign_ecdsa(&mut self, public: EccPoint, private: Private, data: &[u8]) -> Result<Signature, Error> {
-        let primary_handle = self.create_primary_key()?;
+        let primary_handle = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(public)?;
 
         self.ctx.execute_with_nullauth_session(|ctx| {
@@ -120,6 +149,17 @@ impl Tpm {
             ctx.flush_context(primary_handle.into())?;
 
             Ok(sig)
+        })
+    }
+
+    pub fn zgen(&mut self, public: EccPoint) -> Result<EccPoint, Error> {
+        let primary_handle = self.create_primary_master_key()?;
+
+        self.ctx.execute_with_nullauth_session(|ctx| {
+            let zgen_result = ctx.ecdh_z_gen(primary_handle, public)?;
+            ctx.flush_context(primary_handle.into())?;
+
+            Ok(zgen_result)
         })
     }
 }

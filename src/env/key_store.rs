@@ -19,21 +19,22 @@ use arrayref::array_ref;
 
 use opensk::api::crypto::HASH_SIZE;
 use opensk::api::crypto::aes256::Aes256;
+use opensk::api::crypto::hkdf256::Hkdf256;
 use opensk::api::crypto::hmac256::Hmac256;
-use opensk::api::persist::Persist;
-use opensk::env::{AesKey, Env, Hmac};
+use opensk::env::{AesKey, Env, Hkdf, Hmac};
 use opensk::api::key_store::{CredentialSource, Error, KeyStore};
 use opensk::ctap::crypto_wrapper::{aes256_cbc_decrypt, aes256_cbc_encrypt};
 use opensk::ctap::{cbor_read, cbor_write};
 use opensk::ctap::data_formats::{extract_byte_string, extract_map, CredentialProtectionPolicy};
 use opensk::ctap::secret::Secret;
 
-use rand::RngCore;
-
 use sk_cbor::{self as cbor, destructure_cbor_map};
 use sk_cbor::cbor_map_options;
 
+use tss_esapi::structures::{EccParameter, EccPoint};
+
 use crate::env::TuskEnv;
+use crate::tpm::get_tpm;
 
 // CBOR credential IDs consist of
 // - 1   byte : version number
@@ -43,6 +44,13 @@ const CBOR_CREDENTIAL_ID_SIZE: usize = 241;
 const MAX_PADDING_LENGTH: u8 = 0xCF;
 
 const CBOR_CREDENTIAL_ID_VERSION: u8 = 0x01;
+
+const STATIC_MASTER_PUBLIC_KEY: [u8; 64] = [
+    0xcd, 0x47, 0x43, 0xfd, 0x92, 0x37, 0xd4, 0xd9, 0x37, 0xd9, 0x4f, 0x2b, 0xe8, 0xa5, 0x09, 0x62,
+    0xc2, 0x30, 0xe9, 0xf6, 0x1c, 0xfe, 0x3b, 0x55, 0xdd, 0xee, 0x78, 0x87, 0x2d, 0x47, 0x89, 0x27,
+    0x5c, 0xbc, 0x1b, 0x82, 0x92, 0x81, 0x1f, 0x3e, 0xb8, 0xdc, 0x4d, 0x6e, 0x5c, 0x50, 0xdc, 0xca,
+    0xab, 0x2c, 0xd2, 0x78, 0xc8, 0x3f, 0x2f, 0x14, 0xea, 0x0e, 0xa0, 0x80, 0xbb, 0xe0, 0x4e, 0x5e
+];
 
 /// CBOR map keys for serialized credential IDs.
 enum CredentialSourceField {
@@ -72,7 +80,7 @@ impl KeyStore for TuskEnv {
         cbor_write(cbor, &mut payload).map_err(|_| Error)?;
         add_padding(&mut payload)?;
 
-        let master_keys = get_master_keys(self)?;
+        let master_keys = get_master_keys()?;
         let aes_key = AesKey::<TuskEnv>::new(&master_keys.encryption);
         let encrypted_payload =
             aes256_cbc_encrypt::<TuskEnv>(self.rng(), &aes_key, &payload, false)?;
@@ -105,7 +113,7 @@ impl KeyStore for TuskEnv {
         message.extend(rp_id_hash);
 
         let hmac_message_size = bytes.len() - HASH_SIZE;
-        let master_keys = get_master_keys(self)?;
+        let master_keys = get_master_keys()?;
         if !Hmac::<TuskEnv>::verify(
             &master_keys.authentication,
             &message,
@@ -153,7 +161,7 @@ impl KeyStore for TuskEnv {
     }
 
     fn cred_random(&mut self, has_uv: bool) -> Result<Secret<[u8; 32]>, Error> {
-        Ok(get_master_keys(self)?.cred_random[has_uv as usize].clone())
+        Ok(get_master_keys()?.cred_random[has_uv as usize].clone())
     }
 
     fn encrypt_pin_hash(&mut self, plain: &[u8; 16]) -> Result<[u8; 16], Error> {
@@ -181,25 +189,24 @@ struct MasterKeys {
     cred_random: [Secret<[u8; 32]>; 2],
 }
 
-fn get_master_keys(env: &mut impl Env) -> Result<MasterKeys, Error> {
-    let master_keys = match env.persist().key_store_bytes()? {
-        Some(x) if x.len() == 128 => x,
-        Some(_) => return Err(Error),
-        None => {
-            let mut master_keys = Secret::new(128);
-            env.rng().fill_bytes(&mut master_keys);
-            env.persist().write_key_store_bytes(&master_keys)?;
-            master_keys
-        }
-    };
+fn get_master_keys() -> Result<MasterKeys, Error> {
+    let public_key = EccPoint::new(
+        EccParameter::try_from(&STATIC_MASTER_PUBLIC_KEY[0..32]).unwrap(),
+        EccParameter::try_from(&STATIC_MASTER_PUBLIC_KEY[32..64]).unwrap(),
+    );
+
+    let shared_key = get_tpm().write().map_err(|_| Error)?
+        .zgen(public_key).map_err(|_| Error)?
+        .x().to_vec();
+
     let mut encryption: Secret<[u8; 32]> = Secret::default();
-    encryption.copy_from_slice(array_ref![master_keys, 0, 32]);
+    Hkdf::<TuskEnv>::hkdf_empty_salt_256(shared_key.as_ref(), b"encryption", &mut encryption);
     let mut authentication: Secret<[u8; 32]> = Secret::default();
-    authentication.copy_from_slice(array_ref![master_keys, 32, 32]);
+    Hkdf::<TuskEnv>::hkdf_empty_salt_256(shared_key.as_ref(), b"authentication", &mut authentication);
     let mut cred_random_no_uv: Secret<[u8; 32]> = Secret::default();
-    cred_random_no_uv.copy_from_slice(array_ref![master_keys, 64, 32]);
+    Hkdf::<TuskEnv>::hkdf_empty_salt_256(shared_key.as_ref(), b"cred_random_no_uv", &mut cred_random_no_uv);
     let mut cred_random_with_uv: Secret<[u8; 32]> = Secret::default();
-    cred_random_with_uv.copy_from_slice(array_ref![master_keys, 96, 32]);
+    Hkdf::<TuskEnv>::hkdf_empty_salt_256(shared_key.as_ref(), b"cred_random_with_uv", &mut cred_random_with_uv);
     Ok(MasterKeys {
         encryption,
         authentication,
