@@ -1,37 +1,56 @@
-use std::collections::HashMap;
+use std::fs;
 
 use opensk::api::persist::{Persist, PersistIter};
-use opensk::ctap::status_code::CtapResult;
+use opensk::ctap::status_code::{Ctap2StatusCode, CtapResult};
+
+use xdg::BaseDirectories;
 
 pub struct TuskPersist {
-    data: HashMap<usize, Vec<u8>>,
+    xdg: BaseDirectories
 }
 
 impl TuskPersist {
-    pub fn new() -> Self {
+    pub fn new(xdg: BaseDirectories) -> Self {
         TuskPersist {
-            data: HashMap::new(),
+            xdg
         }
     }
 }
 
 impl Persist for TuskPersist {
     fn find(&self, key: usize) -> CtapResult<Option<Vec<u8>>> {
-        Ok(self.data.get(&key).cloned())
+        Ok(match self.xdg.find_data_file(format!("{}.bin", key)) {
+            Some(path) => fs::read(path).ok(),
+            None => None,
+        })
     }
 
     fn insert(&mut self, key: usize, value: &[u8]) -> CtapResult<()> {
-        self.data.insert(key, value.to_vec());
-        Ok(())
+        let path = self.xdg.place_data_file(format!("{}.bin", key))
+            .map_err(|_| Ctap2StatusCode::CTAP2_ERR_VENDOR_INTERNAL_ERROR)?;
+
+        fs::write(path, value).map_err(|_| Ctap2StatusCode::CTAP2_ERR_VENDOR_INTERNAL_ERROR)
     }
 
     fn remove(&mut self, key: usize) -> CtapResult<()> {
-        self.data.remove(&key);
-        Ok(())
+        match self.xdg.find_data_file(format!("{}.bin", key)) {
+            Some(path) => fs::remove_file(path)
+                .map_err(|_| Ctap2StatusCode::CTAP2_ERR_VENDOR_INTERNAL_ERROR),
+            None => Err(Ctap2StatusCode::CTAP2_ERR_VENDOR_INTERNAL_ERROR),
+        }
     }
 
     fn iter(&self) -> CtapResult<PersistIter<'_>> {
-        let iter = self.data.keys().into_iter().map(|k| Ok(k.clone()));
-        Ok(Box::new(iter))
+        let files = self.xdg.list_data_files("");
+        Ok(Box::new(files
+            .into_iter()
+            .filter_map(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .and_then(|name| name.strip_suffix(".bin"))
+                    .and_then(|num_str| num_str.parse::<usize>().ok())
+            })
+            .map(|num| Ok(num))
+        ))
     }
 }

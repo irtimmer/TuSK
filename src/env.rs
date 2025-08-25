@@ -2,6 +2,8 @@ use std::fs::File;
 
 use opensk::env::Env;
 
+use xdg::BaseDirectories;
+
 pub use crypto::TuskCrypto;
 pub use rng::TuskRng;
 pub use customization::TuskCustomization;
@@ -79,11 +81,11 @@ impl Env for TuskEnv {
 }
 
 impl TuskEnv {
-    pub fn new(hid: FidoHid<File>) -> Self {
+    pub fn new(hid: FidoHid<File>, xdg: BaseDirectories) -> Self {
         Self {
             customization: TuskCustomization::new(),
             rng: TuskRng::new(),
-            persist: TuskPersist::new(),
+            persist: TuskPersist::new(xdg),
             hid
         }
     }

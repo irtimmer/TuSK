@@ -31,7 +31,7 @@ struct TuskConfig {
 fn main() {
     env_logger::init();
 
-    let config_path = match init_data() {
+    let (xdg_dirs, config_path) = match init_data() {
         Ok(data) => data,
         Err(e) => {
             eprintln!("Error initializing data: {:?}", e);
@@ -49,14 +49,21 @@ fn main() {
 
     init_tpm(&settings.tcti);
 
-    if let Err(e) = run_fido_hid() {
+    let device = FidoHid::<File>::new().expect("Failed to create FIDO HID device");
+    println!("Virtual FIDO2 HID device created. Waiting for host...");
+    let env = TuskEnv::new(device, xdg_dirs);
+
+    if let Err(e) = run_fido_hid(env) {
         eprintln!("Error: {:?}", e);
     }
 }
 
-fn init_data() -> Result<PathBuf, io::Error> {
+fn init_data() -> Result<(BaseDirectories, PathBuf), io::Error> {
     let xdg_dirs = BaseDirectories::with_prefix("tusk");
-    xdg_dirs.place_config_file("tusk.cfg")
+    xdg_dirs.create_data_directory("")?;
+
+    let config_path = xdg_dirs.place_config_file("tusk.cfg")?;
+    Ok((xdg_dirs, config_path))
 }
 
 fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> {
@@ -69,11 +76,7 @@ fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> 
     settings.try_deserialize::<TuskConfig>()
 }
 
-fn run_fido_hid() -> CtapResult<()> {
-    let device = FidoHid::<File>::new().expect("Failed to create FIDO HID device");
-    println!("Virtual FIDO2 HID device created. Waiting for host...");
-
-    let env = TuskEnv::new(device);
+fn run_fido_hid(env: TuskEnv) -> CtapResult<()> {
     let mut ctap = Ctap::new(env);
     loop {
         let mut packet = [0; 64];
