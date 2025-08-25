@@ -7,12 +7,15 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 arrayref = "0.3.9"
+config = "0.15.14"
 ecdsa = { version = "0.16.9", default-features = false, features = [ "der" ] }
 env_logger = "0.11.8"
 p256 = "0.13.2"
 rand = "0.8.5"
+serde = { version = "1.0.219", features = ["derive"] }
 tss-esapi = "7.6.0"
 uhid-virt = "0.0.8"
+xdg = "3.0.0"
 
 [dependencies.opensk]
 git = "https://github.com/google/OpenSK.git"

@@ -1,4 +1,5 @@
 use std::sync::{OnceLock, RwLock};
+use std::str::FromStr;
 
 use tss_esapi::{Context, Error, TctiNameConf};
 use tss_esapi::attributes::ObjectAttributes;
@@ -11,19 +12,25 @@ use tss_esapi::interface_types::resource_handles::Hierarchy;
 use tss_esapi::structures::{CreateKeyResult, Digest, EccPoint, EccScheme, HashScheme, HashcheckTicket, KeyDerivationFunctionScheme, Private, Public, PublicBuilder, PublicEccParameters, Signature, SignatureScheme, SymmetricDefinitionObject};
 use tss_esapi::tss2_esys::{TPMT_TK_HASHCHECK};
 
+static TPM: OnceLock<RwLock<Tpm>> = OnceLock::new();
+
 #[derive(Debug)]
 pub struct Tpm {
     ctx: Context
 }
 
 pub fn get_tpm() -> &'static RwLock<Tpm> {
-    static TPM: OnceLock<RwLock<Tpm>> = OnceLock::new();
-    TPM.get_or_init(|| RwLock::new(Tpm::new().expect("Failed to initialize TPM")))
+    TPM.get().expect("TPM not initialized")
+}
+
+pub fn init_tpm(tcti: &str) {
+    TPM.set(RwLock::new(Tpm::new(tcti).expect("Failed to initialize TPM")))
+        .expect("TPM already initialized");
 }
 
 impl Tpm {
-    pub fn new() -> Result<Self, Error> {
-        let tcti_cfg = TctiNameConf::from_environment_variable()?;
+    fn new(tcti: &str) -> Result<Self, Error> {
+        let tcti_cfg = TctiNameConf::from_str(tcti)?;
         let mut ctx = Context::new(tcti_cfg)?;
         ctx.startup(StartupType::Clear)?;
 

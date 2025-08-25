@@ -1,25 +1,72 @@
 extern crate alloc;
 
+use std::io;
 use std::fs::File;
+use std::path::PathBuf;
+
+use config::Config;
 
 use opensk::{Ctap, Transport};
 use opensk::ctap::status_code::CtapResult;
 use opensk::api::connection::{HidConnection, UsbEndpoint, RecvStatus};
 use opensk::env::Env;
 
+use serde::Deserialize;
+
+use xdg::BaseDirectories;
+
 use crate::env::TuskEnv;
 use crate::hid::FidoHid;
+use crate::tpm::init_tpm;
 
 mod hid;
 mod env;
 mod tpm;
 
+#[derive(Deserialize)]
+struct TuskConfig {
+    tcti: String
+}
+
 fn main() {
     env_logger::init();
+
+    let config_path = match init_data() {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Error initializing data: {:?}", e);
+            return;
+        }
+    };
+
+    let settings = match read_config(config_path) {
+        Ok(settings) => settings,
+        Err(e) => {
+            eprintln!("Error reading config: {:?}", e);
+            return;
+        }
+    };
+
+    init_tpm(&settings.tcti);
 
     if let Err(e) = run_fido_hid() {
         eprintln!("Error: {:?}", e);
     }
+}
+
+fn init_data() -> Result<PathBuf, io::Error> {
+    let xdg_dirs = BaseDirectories::with_prefix("tusk");
+    xdg_dirs.place_config_file("tusk.cfg")
+}
+
+fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> {
+    let settings = Config::builder()
+        .set_default("tcti", "device:/dev/tpmrm0")?
+        .add_source(config::File::from(config_path).required(false))
+        .add_source(config::Environment::with_prefix("TUSK"))
+        .build()?;
+
+    settings.try_deserialize::<TuskConfig>()
 }
 
 fn run_fido_hid() -> CtapResult<()> {
