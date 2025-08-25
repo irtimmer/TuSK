@@ -15,6 +15,8 @@ mod env;
 mod tpm;
 
 fn main() {
+    env_logger::init();
+
     if let Err(e) = run_fido_hid() {
         eprintln!("Error: {:?}", e);
     }
