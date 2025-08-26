@@ -69,7 +69,7 @@ fn init_data() -> Result<(BaseDirectories, PathBuf), io::Error> {
 fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> {
     let settings = Config::builder()
         .set_default("tcti", "device:/dev/tpmrm0")?
-        .add_source(config::File::from(config_path).required(false))
+        .add_source(config::File::from(config_path).format(config::FileFormat::Ini).required(false))
         .add_source(config::Environment::with_prefix("TUSK"))
         .build()?;
 
