@@ -5,12 +5,15 @@ use tss_esapi::{Context, Error, TctiNameConf};
 use tss_esapi::attributes::ObjectAttributes;
 use tss_esapi::constants::StartupType;
 use tss_esapi::constants::tss::{TPM2_RH_NULL, TPM2_ST_HASHCHECK};
-use tss_esapi::handles::KeyHandle;
 use tss_esapi::interface_types::algorithm::{EccSchemeAlgorithm, HashingAlgorithm, PublicAlgorithm};
 use tss_esapi::interface_types::ecc::EccCurve;
 use tss_esapi::interface_types::resource_handles::Hierarchy;
 use tss_esapi::structures::{CreateKeyResult, Digest, EccPoint, EccScheme, HashScheme, HashcheckTicket, KeyDerivationFunctionScheme, Private, Public, PublicBuilder, PublicEccParameters, Signature, SignatureScheme, SymmetricDefinitionObject};
 use tss_esapi::tss2_esys::{TPMT_TK_HASHCHECK};
+
+use crate::tpm::handles::HandleGuard;
+
+mod handles;
 
 static TPM: OnceLock<RwLock<Tpm>> = OnceLock::new();
 
@@ -47,7 +50,7 @@ impl Drop for Tpm {
 }
 
 impl Tpm {
-    pub fn create_primary_storage_key(&mut self) -> Result<KeyHandle, Error> {
+    fn create_primary_storage_key(&mut self) -> Result<HandleGuard, Error> {
         let public = PublicBuilder::new()
             .with_public_algorithm(PublicAlgorithm::Ecc)
             .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
@@ -73,7 +76,7 @@ impl Tpm {
         self.create_primary_key(public)
     }
 
-    pub fn create_primary_master_key(&mut self) -> Result<KeyHandle, Error> {
+    fn create_primary_master_key(&mut self) -> Result<HandleGuard, Error> {
         let public = PublicBuilder::new()
             .with_public_algorithm(PublicAlgorithm::Ecc)
             .with_name_hashing_algorithm(HashingAlgorithm::Sha256)
@@ -98,8 +101,8 @@ impl Tpm {
         self.create_primary_key(public)
     }
 
-    fn create_primary_key(&mut self, public: Public) -> Result<KeyHandle, Error> {
-        self.ctx.execute_with_nullauth_session(|ctx| {
+    fn create_primary_key(&mut self, public: Public) -> Result<HandleGuard, Error> {
+        let handle = self.ctx.execute_with_nullauth_session(|ctx| {
             let key = ctx.create_primary(
                 Hierarchy::Owner,
                 public,
@@ -110,35 +113,34 @@ impl Tpm {
             )?;
 
             Ok(key.key_handle)
-        })
+        })?;
+
+        Ok(HandleGuard::new(handle, &mut self.ctx))
     }
 
     pub fn create_ecdsa_key(&mut self) -> Result<CreateKeyResult, Error> {
-        let primary_handle = self.create_primary_storage_key()?;
+        let primary_key = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(EccPoint::default())?;
 
-        self.ctx.execute_with_nullauth_session(|ctx| {
-            let key = ctx.create(
-                primary_handle,
-                public,
-                None,
-                None,
-                None,
-                None
-            )?;
-            ctx.flush_context(primary_handle.into())?;
-
-            Ok(key)
-        })
+        primary_key.ctx.execute_with_nullauth_session(|ctx| ctx.create(
+            primary_key.handle,
+            public,
+            None,
+            None,
+            None,
+            None
+        ))
     }
 
     pub fn sign_ecdsa(&mut self, public: EccPoint, private: Private, data: &[u8]) -> Result<Signature, Error> {
-        let primary_handle = self.create_primary_storage_key()?;
+        let primary_key = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(public)?;
 
-        self.ctx.execute_with_nullauth_session(|ctx| {
-            let key_handle = ctx.load(primary_handle, private, public)?;
-            let sig = ctx.sign(
+        primary_key.ctx.execute_with_nullauth_session(|ctx| {
+            let key_handle = ctx.load(primary_key.handle, private, public)?;
+            let key = HandleGuard::new(key_handle, ctx);
+
+            key.ctx.sign(
                 key_handle,
                 Digest::try_from(data)?,
                 SignatureScheme::EcDsa {
@@ -150,24 +152,13 @@ impl Tpm {
                     hierarchy: TPM2_RH_NULL,
                     digest: Default::default(),
                 })?
-            )?;
-
-            ctx.flush_context(key_handle.into())?;
-            ctx.flush_context(primary_handle.into())?;
-
-            Ok(sig)
+            )
         })
     }
 
     pub fn zgen(&mut self, public: EccPoint) -> Result<EccPoint, Error> {
-        let primary_handle = self.create_primary_master_key()?;
-
-        self.ctx.execute_with_nullauth_session(|ctx| {
-            let zgen_result = ctx.ecdh_z_gen(primary_handle, public)?;
-            ctx.flush_context(primary_handle.into())?;
-
-            Ok(zgen_result)
-        })
+        let primary_key = self.create_primary_master_key()?;
+        primary_key.ctx.execute_with_nullauth_session(|ctx| ctx.ecdh_z_gen(primary_key.handle, public))
     }
 }
 
