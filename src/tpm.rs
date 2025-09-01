@@ -2,13 +2,14 @@ use std::sync::{OnceLock, RwLock};
 use std::str::FromStr;
 
 use tss_esapi::{Context, Error, TctiNameConf};
-use tss_esapi::attributes::ObjectAttributes;
-use tss_esapi::constants::StartupType;
+use tss_esapi::attributes::{ObjectAttributes, SessionAttributesBuilder};
+use tss_esapi::constants::{SessionType, StartupType};
 use tss_esapi::constants::tss::{TPM2_RH_NULL, TPM2_ST_HASHCHECK};
 use tss_esapi::interface_types::algorithm::{EccSchemeAlgorithm, HashingAlgorithm, PublicAlgorithm};
 use tss_esapi::interface_types::ecc::EccCurve;
 use tss_esapi::interface_types::resource_handles::Hierarchy;
-use tss_esapi::structures::{CreateKeyResult, Digest, EccPoint, EccScheme, HashScheme, HashcheckTicket, KeyDerivationFunctionScheme, Private, Public, PublicBuilder, PublicEccParameters, Signature, SignatureScheme, SymmetricDefinitionObject};
+use tss_esapi::interface_types::session_handles::AuthSession;
+use tss_esapi::structures::{CreateKeyResult, Digest, EccPoint, EccScheme, HashScheme, HashcheckTicket, KeyDerivationFunctionScheme, Private, Public, PublicBuilder, PublicEccParameters, Signature, SignatureScheme, SymmetricDefinition, SymmetricDefinitionObject};
 use tss_esapi::tss2_esys::{TPMT_TK_HASHCHECK};
 
 use crate::tpm::handles::HandleGuard;
@@ -19,7 +20,8 @@ static TPM: OnceLock<RwLock<Tpm>> = OnceLock::new();
 
 #[derive(Debug)]
 pub struct Tpm {
-    ctx: Context
+    ctx: Context,
+    session: Option<AuthSession>
 }
 
 pub fn get_tpm() -> &'static RwLock<Tpm> {
@@ -36,9 +38,25 @@ impl Tpm {
         let tcti_cfg = TctiNameConf::from_str(tcti)?;
         let mut ctx = Context::new(tcti_cfg)?;
         ctx.startup(StartupType::Clear)?;
+        let session = ctx.start_auth_session(
+            None,
+            None,
+            None,
+            SessionType::Hmac,
+            SymmetricDefinition::AES_256_CFB,
+            HashingAlgorithm::Sha256
+        )?.expect("Failed to start auth session");
+
+        let (attrs, mask) = SessionAttributesBuilder::new()
+            .with_decrypt(true)
+            .with_encrypt(true)
+            .build();
+
+        ctx.tr_sess_set_attributes(session, attrs, mask)?;
 
         Ok(Tpm {
-            ctx
+            ctx,
+            session: Some(session)
         })
     }
 }
@@ -102,7 +120,7 @@ impl Tpm {
     }
 
     fn create_primary_key(&mut self, public: Public) -> Result<HandleGuard, Error> {
-        let handle = self.ctx.execute_with_nullauth_session(|ctx| {
+        let handle = self.ctx.execute_with_session(self.session, |ctx| {
             let key = ctx.create_primary(
                 Hierarchy::Owner,
                 public,
@@ -119,10 +137,11 @@ impl Tpm {
     }
 
     pub fn create_ecdsa_key(&mut self) -> Result<CreateKeyResult, Error> {
+        let session = self.session;
         let primary_key = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(EccPoint::default())?;
 
-        primary_key.ctx.execute_with_nullauth_session(|ctx| ctx.create(
+        primary_key.ctx.execute_with_session(session, |ctx| ctx.create(
             primary_key.handle,
             public,
             None,
@@ -133,10 +152,11 @@ impl Tpm {
     }
 
     pub fn sign_ecdsa(&mut self, public: EccPoint, private: Private, data: &[u8]) -> Result<Signature, Error> {
+        let session = self.session;
         let primary_key = self.create_primary_storage_key()?;
         let public = create_ecdsa_public(public)?;
 
-        primary_key.ctx.execute_with_nullauth_session(|ctx| {
+        primary_key.ctx.execute_with_session(session, |ctx| {
             let key_handle = ctx.load(primary_key.handle, private, public)?;
             let key = HandleGuard::new(key_handle, ctx);
 
@@ -157,8 +177,9 @@ impl Tpm {
     }
 
     pub fn zgen(&mut self, public: EccPoint) -> Result<EccPoint, Error> {
+        let session = self.session;
         let primary_key = self.create_primary_master_key()?;
-        primary_key.ctx.execute_with_nullauth_session(|ctx| ctx.ecdh_z_gen(primary_key.handle, public))
+        primary_key.ctx.execute_with_session(session, |ctx| ctx.ecdh_z_gen(primary_key.handle, public))
     }
 }
 
