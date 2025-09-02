@@ -1,6 +1,10 @@
 use tss_esapi::Context;
 use tss_esapi::handles::KeyHandle;
 
+/// A small guard that ties a TPM key handle to a mutable borrow of a TPM `Context`.
+///
+/// This struct ensures the handle is released when no longer needed on drop.
+/// It ties the lifetime of the `KeyHandle` to the lifetime of the `Context`.
 pub(crate) struct HandleGuard<'a> {
     pub handle: KeyHandle,
     pub ctx: &'a mut Context,

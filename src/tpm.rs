@@ -18,16 +18,34 @@ mod handles;
 
 static TPM: OnceLock<RwLock<Tpm>> = OnceLock::new();
 
+/// Represents a connection to a Trusted Platform Module (TPM).
+///
+/// This struct serves as the primary interface for interacting with the TPM.
+/// It encapsulates the underlying communication context and manages an optional
+/// authentication session for privileged operations.
+///
+/// # Fields
+///
+/// * `ctx` - A `Context` object for low-level communication with the TPM.
+/// * `session` - An optional `AuthSession` for performing authenticated commands.
 #[derive(Debug)]
 pub struct Tpm {
     ctx: Context,
     session: Option<AuthSession>
 }
 
+/// Get a singleton reference to the TPM
+///
+/// # Warning
+/// This function should only be called after the TPM has been initialized using `init_tpm`
 pub fn get_tpm() -> &'static RwLock<Tpm> {
     TPM.get().expect("TPM not initialized")
 }
 
+/// Initialize the TPM using the specified TCTI
+///
+/// # Warning
+/// This function should only be called once during application startup
 pub fn init_tpm(tcti: &str) {
     TPM.set(RwLock::new(Tpm::new(tcti).expect("Failed to initialize TPM")))
         .expect("TPM already initialized");
@@ -68,6 +86,8 @@ impl Drop for Tpm {
 }
 
 impl Tpm {
+
+    /// Create a primary storage key used for the FIDO signing keys
     fn create_primary_storage_key(&mut self) -> Result<HandleGuard, Error> {
         let public = PublicBuilder::new()
             .with_public_algorithm(PublicAlgorithm::Ecc)
@@ -94,6 +114,7 @@ impl Tpm {
         self.create_primary_key(public)
     }
 
+    /// Create a primary key used to derive encryption keys uniquely for this TPM
     fn create_primary_master_key(&mut self) -> Result<HandleGuard, Error> {
         let public = PublicBuilder::new()
             .with_public_algorithm(PublicAlgorithm::Ecc)
@@ -119,6 +140,7 @@ impl Tpm {
         self.create_primary_key(public)
     }
 
+    /// Create a primary key using the specified public template
     fn create_primary_key(&mut self, public: Public) -> Result<HandleGuard, Error> {
         let handle = self.ctx.execute_with_session(self.session, |ctx| {
             let key = ctx.create_primary(
@@ -136,6 +158,7 @@ impl Tpm {
         Ok(HandleGuard::new(handle, &mut self.ctx))
     }
 
+    /// Generate a new ECDSA key pair
     pub fn create_ecdsa_key(&mut self) -> Result<CreateKeyResult, Error> {
         let session = self.session;
         let primary_key = self.create_primary_storage_key()?;
@@ -151,6 +174,7 @@ impl Tpm {
         ))
     }
 
+    /// Sign the given data using the specified ECDSA key pair
     pub fn sign_ecdsa(&mut self, public: EccPoint, private: Private, data: &[u8]) -> Result<Signature, Error> {
         let session = self.session;
         let primary_key = self.create_primary_storage_key()?;
@@ -176,6 +200,7 @@ impl Tpm {
         })
     }
 
+    /// Generate a shared secret using the specified public key and the primary key from the TPM
     pub fn zgen(&mut self, public: EccPoint) -> Result<EccPoint, Error> {
         let session = self.session;
         let primary_key = self.create_primary_master_key()?;
@@ -183,6 +208,7 @@ impl Tpm {
     }
 }
 
+/// Create a new ECDSA public key template that can be used as FIDO credential
 fn create_ecdsa_public(unique: EccPoint) -> Result<Public, Error> {
     PublicBuilder::new()
         .with_public_algorithm(PublicAlgorithm::Ecc)

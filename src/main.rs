@@ -1,3 +1,39 @@
+//! Tusk: A virtual FIDO2 authenticator backed by a TPM.
+//!
+//! This application creates a virtual FIDO2/CTAP HID device that allows a host
+//! system to perform authentication gestures using a Trusted Platform Module (TPM)
+//! as the cryptographic backend. It effectively turns a computer with a TPM into a
+//! roaming authenticator (like a YubiKey or a Titan Security Key).
+//!
+//! # Execution Flow
+//!
+//! 1.  **Initialization**: The `main` function starts by initializing logging and
+//!     setting up necessary application directories using the XDG Base Directory
+//!     Specification via the `init_data` function.
+//!
+//! 2.  **Configuration**: It reads configuration from a file (e.g., `~/.config/tusk/tusk.cfg`)
+//!     and environment variables (prefixed with `TUSK_`). The primary configuration is `tcti`,
+//!     which specifies the TPM Command Transmission Interface (e.g., "device:/dev/tpmrm0").
+//!     This is handled by `read_config`.
+//!
+//! 3.  **TPM Setup**: The TPM is initialized using the provided `tcti` configuration string.
+//!
+//! 4.  **Virtual Device Creation**: A virtual FIDO HID device is created using the `uhid`
+//!     kernel module. This device appears to the host operating system as a physical
+//!     USB security key.
+//!
+//! 5.  **Main Loop**: The `run_fido_hid` function enters an infinite loop to service requests
+//!     from the host. It waits for HID packets, processes them using the `opensk` CTAP
+//!     library, and sends response packets back. The `TuskEnv` struct provides the
+//!     necessary environment (TPM access, storage) for the `opensk` library to function.
+//!
+//! # Modules
+//!
+//! - `hid`: Manages the creation and interaction with the virtual FIDO HID device.
+//! - `env`: Implements the `opensk::env::Env` trait, bridging the `opensk` library with
+//!   the TPM backend and application storage.
+//! - `tpm`: Contains the logic for initializing and interacting with the TPM.
+
 extern crate alloc;
 
 use std::io;
@@ -59,6 +95,8 @@ fn main() {
 }
 
 fn init_data() -> Result<(BaseDirectories, PathBuf), io::Error> {
+    // Initialize BaseDirectories and get config path
+
     let xdg_dirs = BaseDirectories::with_prefix("tusk");
     xdg_dirs.create_data_directory("")?;
 
@@ -67,6 +105,8 @@ fn init_data() -> Result<(BaseDirectories, PathBuf), io::Error> {
 }
 
 fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> {
+    // Read configuration from file and environment variables and set defaults
+
     let settings = Config::builder()
         .set_default("tcti", "device:/dev/tpmrm0")?
         .add_source(config::File::from(config_path).format(config::FileFormat::Ini).required(false))
@@ -77,6 +117,8 @@ fn read_config(config_path: PathBuf) -> Result<TuskConfig, config::ConfigError> 
 }
 
 fn run_fido_hid(env: TuskEnv) -> CtapResult<()> {
+    // Main loop for Tusk that constantly processes HID packets
+
     let mut ctap = Ctap::new(env);
     loop {
         let mut packet = [0; 64];

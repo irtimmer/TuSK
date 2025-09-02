@@ -17,6 +17,15 @@ impl TuskPersist {
     }
 }
 
+/// Persist implementation for `TuskPersist`.
+///
+/// This implementation stores values as files under the configured XDG data
+/// directory. Keys are mapped to filenames using the pattern "<key>.bin"
+/// where <key> is the decimal representation of the `usize` key.
+///
+/// Note: All filesystem and XDG-related failures are coalesced into
+/// `CTAP2_ERR_VENDOR_INTERNAL_ERROR` for write/remove operations; read
+/// failures are treated as absence for `find`.
 impl Persist for TuskPersist {
     fn find(&self, key: usize) -> CtapResult<Option<Vec<u8>>> {
         Ok(match self.xdg.find_data_file(format!("{}.bin", key)) {

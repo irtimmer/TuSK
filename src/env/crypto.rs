@@ -1,3 +1,8 @@
+//! TPM-backed implementation and glue to the OpenSK crypto traits.
+//!
+//! This module provides a thin adapter layer that implements the `opensk::api::crypto::Crypto`
+//! family of traits using a local TPM for ECDSA key generation and signing while delegating
+//! symmetric and hash primitives to software implementations.
 use ecdsa::{Signature as DerSignature};
 
 use opensk::api::crypto::sha256::Sha256;

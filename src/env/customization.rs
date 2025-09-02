@@ -1,6 +1,7 @@
 use opensk::api::customization::{Customization, AAGUID_LENGTH};
 use opensk::ctap::data_formats::{CredentialProtectionPolicy, EnterpriseAttestationMode};
 
+/// Tusk AAGUID constant
 const TUSK_AAGUID: [u8; AAGUID_LENGTH] = [
     0x18, 0xed, 0x54, 0x76, 0x26, 0xe3, 0x46, 0xa2,
     0x80, 0xa5, 0xd9, 0x83, 0xb3, 0xbd, 0xe8, 0x56
@@ -26,6 +27,11 @@ impl TuskCustomization {
     }
 }
 
+/// Implementation of the `Customization` trait for `TuskCustomization`.
+///
+/// This provides Tusk-specific defaults, limits and feature flags used by the
+/// CTAP2 authenticator implementation. The values reflect sensible defaults
+/// and constraints (some configurable via the `TuskCustomization` fields).
 impl Customization for TuskCustomization {
     fn aaguid(&self) -> &'static [u8; AAGUID_LENGTH] {
         &TUSK_AAGUID

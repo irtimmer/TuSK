@@ -15,6 +15,8 @@ impl TuskRng {
     }
 }
 
+/// Implements the `rand::RngCore` trait for `TuskRng` by delegating all operations to the
+/// wrapped RNG stored in the tuple field `.0`.
 impl RngCore for TuskRng {
     fn next_u32(&mut self) -> u32 {
         self.0.next_u32()

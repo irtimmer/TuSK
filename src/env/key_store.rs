@@ -45,6 +45,7 @@ const MAX_PADDING_LENGTH: u8 = 0xCF;
 
 const CBOR_CREDENTIAL_ID_VERSION: u8 = 0x01;
 
+/// Static public key used for key derivation from TPM using HKDF
 const STATIC_MASTER_PUBLIC_KEY: [u8; 64] = [
     0xcd, 0x47, 0x43, 0xfd, 0x92, 0x37, 0xd4, 0xd9, 0x37, 0xd9, 0x4f, 0x2b, 0xe8, 0xa5, 0x09, 0x62,
     0xc2, 0x30, 0xe9, 0xf6, 0x1c, 0xfe, 0x3b, 0x55, 0xdd, 0xee, 0x78, 0x87, 0x2d, 0x47, 0x89, 0x27,
@@ -189,6 +190,7 @@ struct MasterKeys {
     cred_random: [Secret<[u8; 32]>; 2],
 }
 
+/// Get master keys used for wrapping credentials
 fn get_master_keys() -> Result<MasterKeys, Error> {
     let public_key = EccPoint::new(
         EccParameter::try_from(&STATIC_MASTER_PUBLIC_KEY[0..32]).unwrap(),
@@ -227,6 +229,7 @@ fn add_padding(data: &mut Vec<u8>) -> Result<(), Error> {
     Ok(())
 }
 
+/// Remove PKCS padding from data.
 fn remove_padding(data: &[u8]) -> Result<&[u8], Error> {
     if data.len() != MAX_PADDING_LENGTH as usize + 1 {
         // This is an internal error instead of corrupted credential ID which we should just ignore because

@@ -52,6 +52,11 @@ impl<T: Read + Write> FidoHid<T> {
     }
 }
 
+/// Implements the `HidConnection` trait for a `FidoHid` device, which is a wrapper
+/// around a Linux `uhid` (user-space HID) stream.
+///
+/// This implementation translates between the generic `HidConnection` interface used by the
+/// CTAP2 authenticator logic and the specific event-driven model of the `uhid` kernel API.
 impl<T: Read + Write> HidConnection for FidoHid<T> {
     fn send(&mut self, buf: &[u8; 64], _endpoint: UsbEndpoint) -> CtapResult<()> {
         self.0.write(buf).map_err(|_| Ctap2StatusCode::CTAP2_ERR_ACTION_TIMEOUT)?;

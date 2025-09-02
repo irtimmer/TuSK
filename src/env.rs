@@ -28,6 +28,19 @@ pub struct TuskEnv {
     hid: FidoHid<File>,
 }
 
+/// Implementation of the `ctap-authenticator` `Env` trait for `TuskEnv`.
+///
+/// This implementation brings together all the necessary components for the Tusk
+/// software authenticator. It specifies the concrete types for various environmental
+/// services like random number generation (`TuskRng`), persistent storage (`TuskPersist`),
+/// and cryptographic operations (`TuskCrypto`).
+///
+/// `TuskEnv` itself implements the `UserPresence`, `KeyStore`, and `Clock` traits,
+/// so the corresponding methods simply return a reference to `self`.
+///
+/// The HID connection is defined as `FidoHid<File>`, indicating a file-based
+/// transport layer, which is typical for a software authenticator interacting
+/// with the host system.
 impl Env for TuskEnv {
     type Rng = TuskRng;
     type UserPresence = Self;

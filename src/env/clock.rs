@@ -4,6 +4,12 @@ use opensk::api::clock::Clock;
 
 use crate::env::TuskEnv;
 
+/// Implements the `Clock` trait for `TuskEnv`.
+///
+/// This implementation uses a simple millisecond-based timestamp system, where a timer
+/// is represented as a `u64` timestamp marking a future point in time.
+///
+/// The `now()` function is used as the source of the current time in milliseconds.
 impl Clock for TuskEnv {
     type Timer = u64;
 
@@ -16,6 +22,7 @@ impl Clock for TuskEnv {
     }
 }
 
+/// Returns the current time in milliseconds since the UNIX epoch.
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
