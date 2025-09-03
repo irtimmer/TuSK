@@ -10,6 +10,7 @@ pub use customization::TuskCustomization;
 pub use persist::TuskPersist;
 pub use write::TuskWrite;
 
+use crate::env::user_presence::PinentryPresence;
 use crate::hid::FidoHid;
 
 mod clock;
@@ -26,6 +27,7 @@ pub struct TuskEnv {
     rng: TuskRng,
     persist: TuskPersist,
     hid: FidoHid<File>,
+    presence: PinentryPresence
 }
 
 /// Implementation of the `ctap-authenticator` `Env` trait for `TuskEnv`.
@@ -99,6 +101,7 @@ impl TuskEnv {
             customization: TuskCustomization::new(),
             rng: TuskRng::new(),
             persist: TuskPersist::new(xdg),
+            presence: PinentryPresence::default(),
             hid
         }
     }

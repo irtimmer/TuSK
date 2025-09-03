@@ -15,6 +15,7 @@ It provides a secure and convenient way to authenticate users and devices using 
 - TPM2-backed signing keys
 - Virtual FIDO2 device emulation using `uhid`
 - FIDO2 key implementation by [OpenSK](https://github.com/google/OpenSK)
+- User presence verification using `pinentry` popup
 - Resident keys support (saved on disk)
 
 ## Security
@@ -27,7 +28,7 @@ Physical attacks on the device or side-channel attacks may still pose risks.
 - Pin protection is currently implemented in software and not backed by the TPM.
 - General counter is kept in software and not backed by the TPM.
 - Attackers with access to the TPM (e.g. physical access or malware) can abuse the TPM for signing any number of webauthn requests.
-- User verification is faked.
+- User verification is just a popup and therefore insecure.
 - FIDO2 key attestation is not yet implemented.
 - Resident keys can not be migrated to other devices.
 
@@ -69,6 +70,8 @@ Data, like blobs and resident keys, are stored in `$HOME/.local/share/tusk`.
 
 ## Run
 
+TuSK will show a confirmation dialog when user presence is required.
+Therefore TuSK needs to be run within the user's session to display the dialog properly.
 To run TuSK, use the following command:
 
 ```bash
